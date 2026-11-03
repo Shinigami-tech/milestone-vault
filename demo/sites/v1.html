@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Daily Grind · Coffee & pastries in Astana</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;font-family:Georgia,serif;background:#f6efe6;color:#2b1d14;line-height:1.5;font-size:18px}
+  header{background:#3b2417;color:#fff7ee;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+  header a{color:#7a5a45;text-decoration:none;font-size:11px}
+  .brand{font-size:22px;font-weight:bold}
+  main{width:1100px;margin:0 auto;padding:24px 20px}
+  h1{font-size:clamp(30px,6vw,52px);line-height:1.1;margin:24px 0 12px}
+  .cta{display:inline-block;background:#8a3b12;color:#fff;padding:14px 22px;border-radius:8px;text-decoration:none;min-height:44px}
+  .grid{display:grid;grid-template-columns:repeat(3,340px);gap:16px;margin:28px 0}
+  .card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+  .card img{width:100%;height:auto;border-radius:8px;display:block}
+  footer{padding:24px 20px;text-align:center;color:#c9b9a8;font-size:10px}
+</style>
+</head>
+<body>
+<header><span class="brand">Daily Grind</span><nav aria-label="Main"><a href="#menu">Menu</a><a href="#visit">Visit us</a></nav></header>
+<main>
+  <div style="font-size:40px">Fresh coffee, every morning</div>
+  <p>Espresso pulled to order and pastries baked in-house before sunrise. Open daily 7:00–20:00.</p>
+  <a class="cta" href="/old-locations.html">Find us</a> <a href="/menu.pdf" style="font-size:10px">menu</a>
+  <section id="menu" aria-labelledby="menu-h">
+    <h2 id="menu-h">Menu</h2>
+    <div class="grid">
+      <div class="card"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 3'%3E%3Crect width='4' height='3' fill='%23c8a27a'/%3E%3C/svg%3E" width="400" height="300"><h3>Flat white</h3><p>Double ristretto, silky milk. 1 400 ₸</p></div>
+      <div class="card"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 3'%3E%3Crect width='4' height='3' fill='%23a5714c'/%3E%3C/svg%3E" width="400" height="300"><h3>Croissant</h3><p>All-butter, baked at 5 am. 900 ₸</p></div>
+      <div class="card"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 3'%3E%3Crect width='4' height='3' fill='%23e2c9a6'/%3E%3C/svg%3E" width="400" height="300"><h3>Cold brew</h3><p>Steeped 18 hours. 1 200 ₸</p></div>
+    </div>
+  </section>
+  <section id="visit" aria-labelledby="visit-h">
+    <h2 id="visit-h">Visit us</h2>
+    <p>Kabanbay Batyr 12, Astana · +7 700 000 00 00</p>
+  </section>
+</main>
+<footer>© Daily Grind</footer>
+</body>
+</html>

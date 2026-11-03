@@ -1,0 +1,7 @@
+node_modules/
+data/
+.env
+.suffix
+contract/target/
+*.log
+.DS_Store

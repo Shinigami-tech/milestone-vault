@@ -1,0 +1,27 @@
+{
+  "name": "milestone-vault",
+  "version": "1.0.0",
+  "description": "Escrow on NEAR that pays a freelancer's website milestone only after a sandboxed AI auditor proves the site passes the agreed checks.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env app/server.mjs",
+    "attack": "node --env-file-if-exists=.env scripts/attack.mjs",
+    "setup:testnet": "node --env-file-if-exists=.env scripts/setup-testnet.mjs",
+    "build:sandbox": "docker build -t mv-auditor-sandbox auditor/sandbox",
+    "build:contract": "cd contract && cargo near build non-reproducible-wasm",
+    "test:contract": "cd contract && cargo test",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "axe-core": "^4.14.0",
+    "express": "^4.22.3",
+    "near-api-js": "^7.4.0"
+  },
+  "optionalDependencies": {
+    "playwright": "1.63.0"
+  }
+}
