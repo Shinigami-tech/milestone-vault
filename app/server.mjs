@@ -1,6 +1,6 @@
-// Milestone Vault web app: the demo "deal room" plus the auditor agent running in the same process.
-// The client and freelancer buttons sign with DEMO testnet accounts from .env so a judge can try the
-// whole flow without a wallet. The auditor signs with its own function-call key only.
+// Milestone Vault web app: the demo "deal room" plus two independent auditor agents running in the
+// same process. The client and freelancer buttons sign with DEMO testnet accounts from .env so a
+// judge can try the whole flow without a wallet. Each auditor signs with its own function-call key.
 import express from "express";
 import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
@@ -9,7 +9,9 @@ import { createAuditor } from "../auditor/agent.mjs";
 import { llmEnabled, modelName } from "../auditor/engine/llm.mjs";
 import { CONTAINMENT_POLICY } from "../auditor/engine/sandbox.mjs";
 import { runAttack } from "../lib/attack.mjs";
-import { account, accountUrl, call, provider, toYocto, txUrl, VAULT, view, NETWORK, EXPLORER } from "../lib/near.mjs";
+import { gaslessSubmit, RELAY_METHODS } from "../lib/relayer.mjs";
+import { statementCsv } from "../lib/statement.mjs";
+import { account, accountUrl, call, provider, toYocto, txUrl, VAULT, view, viewOn, NETWORK, EXPLORER } from "../lib/near.mjs";
 
 const PORT = +process.env.PORT || 8090;
 const DATA = process.env.MV_DATA || new URL("../data", import.meta.url).pathname;
@@ -17,17 +19,22 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replac
 // The address the SANDBOX uses to reach the demo sites (inside Docker, the host is 172.17.0.1).
 const SITES_URL = (process.env.SITES_URL || `${PUBLIC_URL}/sites`).replace(/\/$/, "");
 const ALLOW = (process.env.MV_ALLOW_HOSTS || "").split(",").map((s) => s.trim()).filter(Boolean);
+const TUSDC = process.env.TUSDC_CONTRACT || "";
+const CHALLENGE_SECS = +process.env.MV_CHALLENGE_SECS || 45; // demo-sized; real jobs would use days
 mkdirSync(DATA, { recursive: true });
 
-if (!VAULT) { console.error("VAULT_CONTRACT is not set. Run: npm run build:contract && npm run setup:testnet"); process.exit(1); }
+if (!VAULT) { console.error("VAULT_CONTRACT is not set. Run: npm run build:contract && npm run build:token && npm run setup:testnet"); process.exit(1); }
 
 const bus = new EventEmitter(); bus.setMaxListeners(100);
 const history = [];
-const emit = (ev) => { const e = { t: Date.now(), ...ev }; history.push(e); if (history.length > 500) history.shift(); bus.emit("ev", e); };
+const emit = (ev) => { const e = { t: Date.now(), ...ev }; history.push(e); if (history.length > 800) history.shift(); bus.emit("ev", e); };
 
 const client = account(process.env.DEMO_CLIENT_ACCOUNT, process.env.DEMO_CLIENT_KEY);
 const freelancer = account(process.env.DEMO_FREELANCER_ACCOUNT, process.env.DEMO_FREELANCER_KEY);
-const auditor = createAuditor({ dataDir: DATA, allowHosts: ALLOW, publicUrl: PUBLIC_URL, emit });
+const auditors = [
+  createAuditor({ id: "A", accountId: process.env.AUDITOR_A_ACCOUNT, key: process.env.AUDITOR_A_KEY, dataDir: DATA, allowHosts: ALLOW, publicUrl: PUBLIC_URL, emit, keeper: true }),
+  createAuditor({ id: "B", accountId: process.env.AUDITOR_B_ACCOUNT, key: process.env.AUDITOR_B_KEY, dataDir: DATA, allowHosts: ALLOW, publicUrl: PUBLIC_URL, emit }),
+];
 
 const VERSIONS = {
   v1: { file: "v1.html", label: "First draft (rushed)" },
@@ -39,45 +46,77 @@ const app = express();
 app.use(express.json({ limit: "20kb" }));
 app.use(express.static(new URL("../web", import.meta.url).pathname));
 app.use("/sites", express.static(new URL("../demo/sites", import.meta.url).pathname));
-app.use("/evidence", express.static(join(DATA, "evidence"), { setHeaders: (r) => r.set("Content-Type", "application/json") }));
+const json = { setHeaders: (r) => r.set("Content-Type", "application/json") };
+app.use("/evidence", express.static(join(DATA, "evidence"), json));
+app.use("/attestations", express.static(join(DATA, "attestations"), json));
 app.use("/runs", express.static(join(DATA, "runs")));
 
-async function balance(id) {
+async function nearBalance(id) {
   try { const a = await provider.viewAccount({ accountId: id, finality: "optimistic" }); return Number(BigInt(a.amount) / 10n ** 20n) / 10000; } catch { return null; }
+}
+async function usdcBalance(id) {
+  if (!TUSDC || !id) return null;
+  try { return Number(await viewOn(TUSDC, "ft_balance_of", { account_id: id })) / 1e6; } catch { return null; }
 }
 
 app.get("/api/info", async (req, res) => {
+  let config = null; try { config = await view("get_config", {}); } catch {}
   res.json({
-    network: NETWORK, explorer: EXPLORER, vault: VAULT, vaultUrl: accountUrl(VAULT),
-    auditor: process.env.AUDITOR_ACCOUNT, auditorUrl: accountUrl(process.env.AUDITOR_ACCOUNT),
+    network: NETWORK, explorer: EXPLORER, vault: VAULT, vaultUrl: accountUrl(VAULT), config,
+    auditors: auditors.map((a) => ({ id: a.id, account: a.accountId, url: accountUrl(a.accountId), enabled: a.enabled })),
     client: process.env.DEMO_CLIENT_ACCOUNT, freelancer: process.env.DEMO_FREELANCER_ACCOUNT,
-    demo: Boolean(client && freelancer), llm: llmEnabled() ? modelName() : null, policy: CONTAINMENT_POLICY,
+    arbiter: process.env.ARBITER_ACCOUNT, relayer: process.env.RELAYER_ACCOUNT, relayMethods: RELAY_METHODS, token: TUSDC, tokenUrl: TUSDC && accountUrl(TUSDC),
+    challengeSecs: CHALLENGE_SECS, demo: Boolean(client && freelancer), llm: llmEnabled() ? modelName() : null, policy: CONTAINMENT_POLICY,
     versions: Object.fromEntries(Object.entries(VERSIONS).map(([k, v]) => [k, { ...v, url: `${PUBLIC_URL}/sites/${v.file}` }])),
   });
 });
 
 app.get("/api/balances", async (req, res) => {
-  const [c, f, v] = await Promise.all([balance(process.env.DEMO_CLIENT_ACCOUNT), balance(process.env.DEMO_FREELANCER_ACCOUNT), balance(VAULT)]);
-  res.json({ client: c, freelancer: f, vault: v });
+  const ids = { client: process.env.DEMO_CLIENT_ACCOUNT, freelancer: process.env.DEMO_FREELANCER_ACCOUNT, vault: VAULT, auditorA: process.env.AUDITOR_A_ACCOUNT, auditorB: process.env.AUDITOR_B_ACCOUNT, relayer: process.env.RELAYER_ACCOUNT };
+  const out = {};
+  await Promise.all(Object.entries(ids).map(async ([k, id]) => { out[k] = { near: await nearBalance(id), usdc: await usdcBalance(id) }; }));
+  res.json(out);
 });
 
 app.get("/api/jobs", async (req, res) => { try { res.json(await view("get_jobs", {})); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get("/api/jobs/:id", async (req, res) => { try { res.json(await view("get_job", { job_id: req.params.id })); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get("/api/jobs/:id/statement.csv", async (req, res) => {
+  try {
+    const job = await view("get_job", { job_id: req.params.id });
+    if (!job) return res.status(404).send("No such job");
+    res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="milestone-vault-job-${job.id}.csv"` });
+    res.send(statementCsv(job, { explorer: EXPLORER, vault: VAULT, publicUrl: PUBLIC_URL }));
+  } catch (e) { res.status(500).send(e.message); }
+});
 
+const CRITERIA = { min_overall: 75, min_accessibility: 90, min_mobile: 90, min_seo: 80, max_broken_links: 0, forbid_malicious_scripts: true };
 app.post("/api/demo/job", async (req, res) => {
   if (!client) return res.status(400).json({ error: "Demo accounts are not configured" });
-  const amount = 2; // NEAR, testnet
-  const job = {
+  const usdc = req.body?.currency === "usdc" && TUSDC;
+  const base = {
     freelancer: process.env.DEMO_FREELANCER_ACCOUNT,
     title: "Daily Grind coffee shop website",
-    criteria: { min_overall: 75, min_accessibility: 90, min_mobile: 90, min_seo: 80, max_broken_links: 0, forbid_malicious_scripts: true },
-    milestones: [{ title: "Mobile-ready landing page", amount: toYocto(amount) }],
+    criteria: CRITERIA,
     deadline_secs: 7 * 24 * 3600,
+    challenge_secs: CHALLENGE_SECS,
   };
   try {
-    emit({ type: "log", line: `Client locks ${amount} NEAR in the vault for "${job.title}"…` });
-    const tx = await call(client, "create_job", { job }, { deposit: toYocto(amount) });
-    emit({ type: "job_created", jobId: tx.value, amount, tx: tx.url, criteria: job.criteria });
+    let tx, amountLabel;
+    if (usdc) {
+      // 50 tUSDC for the milestone + 6 audits × 0.25 tUSDC for the auditors (6 decimals)
+      const job = { ...base, milestones: [{ title: "Mobile-ready landing page", amount: "50000000" }], audit_fee: "250000", audit_budget: "1500000" };
+      amountLabel = "50 tUSDC (+1.5 tUSDC audit budget)";
+      emit({ type: "log", line: `Client locks ${amountLabel} in the vault via ft_transfer_call…` });
+      tx = await call(client, "ft_transfer_call", { receiver_id: VAULT, amount: "51500000", msg: JSON.stringify(job) }, { deposit: "1", gas: "150000000000000", receiverId: TUSDC });
+      const jobs = await view("get_jobs", {});
+      tx.value = jobs[jobs.length - 1].id;
+    } else {
+      const job = { ...base, milestones: [{ title: "Mobile-ready landing page", amount: toYocto(2) }], audit_fee: toYocto(0.01), audit_budget: toYocto(0.06) };
+      amountLabel = "2 NEAR (+0.06 NEAR audit budget)";
+      emit({ type: "log", line: `Client locks ${amountLabel} in the vault for "${base.title}"…` });
+      tx = await call(client, "create_job", { job }, { deposit: toYocto(2.06) });
+    }
+    emit({ type: "job_created", jobId: tx.value, amount: amountLabel, currency: usdc ? "tUSDC" : "NEAR", tx: tx.url, criteria: CRITERIA, challengeSecs: CHALLENGE_SECS });
     res.json({ jobId: tx.value, tx: tx.url });
   } catch (e) { emit({ type: "log", line: `create_job failed: ${e.message}` }); res.status(500).json({ error: e.message, tx: e.url }); }
 });
@@ -89,10 +128,32 @@ app.post("/api/demo/submit", async (req, res) => {
   const jobId = String(req.body?.jobId ?? "");
   const url = `${SITES_URL}/${v.file}`;
   try {
-    const tx = await call(freelancer, "submit", { job_id: jobId, milestone: 0, url });
-    emit({ type: "submitted", jobId, milestone: 0, version: req.body.version, label: v.label, url: `${PUBLIC_URL}/sites/${v.file}`, tx: tx.url });
+    const before = await nearBalance(process.env.DEMO_FREELANCER_ACCOUNT);
+    // Gasless: the freelancer signs a meta transaction; our relayer pays the gas.
+    const tx = await gaslessSubmit(freelancer, { job_id: jobId, milestone: 0, url });
+    emit({ type: "submitted", jobId, milestone: 0, version: req.body.version, label: v.label, url: `${PUBLIC_URL}/sites/${v.file}`, tx: tx.url, gasless: true, relayer: process.env.RELAYER_ACCOUNT, freelancerNearBefore: before });
     res.json({ tx: tx.url });
   } catch (e) { emit({ type: "log", line: `submit failed: ${e.message}` }); res.status(500).json({ error: e.message, tx: e.url }); }
+});
+
+app.post("/api/demo/dispute", async (req, res) => {
+  if (!client) return res.status(400).json({ error: "Demo accounts are not configured" });
+  try {
+    const tx = await call(client, "dispute", { job_id: String(req.body?.jobId ?? ""), milestone: 0, reason: String(req.body?.reason || "The menu prices on the site are wrong").slice(0, 200) });
+    emit({ type: "disputed", jobId: req.body?.jobId, milestone: 0, tx: tx.url });
+    res.json({ tx: tx.url });
+  } catch (e) { res.status(500).json({ error: e.message, tx: e.url }); }
+});
+
+const arbiter = account(process.env.ARBITER_ACCOUNT, process.env.ARBITER_KEY);
+app.post("/api/demo/resolve", async (req, res) => {
+  if (!arbiter) return res.status(400).json({ error: "Arbiter is not configured" });
+  try {
+    const pay = Boolean(req.body?.pay);
+    const tx = await call(arbiter, "resolve", { job_id: String(req.body?.jobId ?? ""), milestone: 0, pay }, { gas: "150000000000000" });
+    emit({ type: "resolved", jobId: req.body?.jobId, milestone: 0, pay, tx: tx.url });
+    res.json({ tx: tx.url });
+  } catch (e) { res.status(500).json({ error: e.message, tx: e.url }); }
 });
 
 let attacking = false;
@@ -100,7 +161,7 @@ app.post("/api/demo/attack", async (req, res) => {
   if (attacking) return res.status(409).json({ error: "Attack already running" });
   attacking = true;
   res.json({ started: true });
-  try { await runAttack((ev) => emit(ev)); } catch (e) { emit({ type: "attack_done", held: null, error: e.message }); } finally { attacking = false; }
+  try { await runAttack((ev) => emit(ev), { freelancer, trapUrl: `${SITES_URL}/trap.html` }); } catch (e) { emit({ type: "attack_done", held: null, error: e.message }); } finally { attacking = false; }
 });
 
 app.get("/api/events", (req, res) => {
@@ -115,8 +176,8 @@ app.get("/api/events", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Milestone Vault on ${PUBLIC_URL} · vault ${VAULT} (${NETWORK}) · auditor ${auditor.enabled ? process.env.AUDITOR_ACCOUNT : "off"} · summary: ${llmEnabled() ? "NEAR AI " + modelName() : "rules"}`);
-  if (auditor.enabled) auditor.start(4000);
+  console.log(`Milestone Vault on ${PUBLIC_URL} · vault ${VAULT} (${NETWORK}) · auditors ${auditors.filter((a) => a.enabled).map((a) => a.accountId).join(", ") || "off"} · note: ${llmEnabled() ? "NEAR AI " + modelName() : "rules"}`);
+  auditors.forEach((a, i) => a.enabled && setTimeout(() => a.start(4000), i * 1500));
 });
 
 export { txUrl };

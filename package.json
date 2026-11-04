@@ -14,10 +14,13 @@
     "build:sandbox": "docker build -t mv-auditor-sandbox auditor/sandbox",
     "build:contract": "cd contract && cargo near build non-reproducible-wasm",
     "test:contract": "cd contract && cargo test",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "build:token": "cd token && cargo near build non-reproducible-wasm",
+    "e2e": "node scripts/e2e.mjs"
   },
   "dependencies": {
     "axe-core": "^4.14.0",
+    "ethers": "^6.17.0",
     "express": "^4.22.3",
     "near-api-js": "^7.4.0"
   },
