@@ -20,18 +20,20 @@ export const CONTAINMENT_POLICY = [
   { id: "network", label: "Browser blocks metadata, private network and data exfiltration", flag: "network guard" },
 ];
 
-export async function runSandbox({ url, mode, patch, workDir, allowHosts = [], onLog = () => {} }) {
+export async function runSandbox({ url, mode, patch, workDir, allowHosts = [], timeLimit, onLog = () => {} }) {
   const id = "sd-" + randomBytes(4).toString("hex");
   const dir = join(workDir, `${mode}-${id}`);
   mkdirSync(join(dir, "out"), { recursive: true });
   chmodSync(join(dir, "out"), 0o777); // the sandbox user (uid 1001) may write ONLY here
-  writeFileSync(join(dir, "input.json"), JSON.stringify({ url, mode, patch, allowHosts }));
+  writeFileSync(join(dir, "input.json"), JSON.stringify({ url, mode, patch, allowHosts, timeLimit }));
 
   let cmd, args, env;
   if (DRIVER === "local") {
     cmd = process.execPath;
     args = [new URL("../sandbox/runner.mjs", import.meta.url).pathname];
-    env = { PATH: process.env.PATH, HOME: process.env.HOME, SD_JOB_DIR: dir };
+    // dev only (no container): inherit the machine's env for proxies/Playwright paths, but never our secrets
+    env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/KEY|TOKEN|SECRET|PASSWORD/i.test(k)));
+    env.SD_JOB_DIR = dir;
   } else {
     cmd = "docker";
     args = [
