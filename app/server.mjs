@@ -21,6 +21,7 @@ const SITES_URL = (process.env.SITES_URL || `${PUBLIC_URL}/sites`).replace(/\/$/
 const ALLOW = (process.env.MV_ALLOW_HOSTS || "").split(",").map((s) => s.trim()).filter(Boolean);
 const TUSDC = process.env.TUSDC_CONTRACT || "";
 const CHALLENGE_SECS = +process.env.MV_CHALLENGE_SECS || 45; // demo-sized; real jobs would use days
+const DEMO_NEAR = 0.5; // testnet NEAR per demo milestone
 mkdirSync(DATA, { recursive: true });
 
 if (!VAULT) { console.error("VAULT_CONTRACT is not set. Run: npm run build:contract && npm run build:token && npm run setup:testnet"); process.exit(1); }
@@ -66,7 +67,7 @@ app.get("/api/info", async (req, res) => {
     auditors: auditors.map((a) => ({ id: a.id, account: a.accountId, url: accountUrl(a.accountId), enabled: a.enabled })),
     client: process.env.DEMO_CLIENT_ACCOUNT, freelancer: process.env.DEMO_FREELANCER_ACCOUNT,
     arbiter: process.env.ARBITER_ACCOUNT, relayer: process.env.RELAYER_ACCOUNT, relayMethods: RELAY_METHODS, token: TUSDC, tokenUrl: TUSDC && accountUrl(TUSDC),
-    challengeSecs: CHALLENGE_SECS, demo: Boolean(client && freelancer), llm: llmEnabled() ? modelName() : null, policy: CONTAINMENT_POLICY,
+    challengeSecs: CHALLENGE_SECS, demoNear: DEMO_NEAR, demo: Boolean(client && freelancer), llm: llmEnabled() ? modelName() : null, policy: CONTAINMENT_POLICY,
     versions: Object.fromEntries(Object.entries(VERSIONS).map(([k, v]) => [k, { ...v, url: `${PUBLIC_URL}/sites/${v.file}` }])),
   });
 });
@@ -89,6 +90,24 @@ app.get("/api/jobs/:id/statement.csv", async (req, res) => {
   } catch (e) { res.status(500).send(e.message); }
 });
 
+// Demo money recycler: judges can click "Lock" as often as they like. When the demo client runs low,
+// the demo freelancer sends its testnet NEAR back, and tUSDC is topped up from the open testnet faucet.
+async function ensureDemoFunds(usdc) {
+  try {
+    if (usdc) {
+      if ((await usdcBalance(process.env.DEMO_CLIENT_ACCOUNT)) < 100) await call(client, "mint", { account_id: process.env.DEMO_CLIENT_ACCOUNT, amount: "1000000000" }, { receiverId: TUSDC });
+      return;
+    }
+    const c = await nearBalance(process.env.DEMO_CLIENT_ACCOUNT), f = await nearBalance(process.env.DEMO_FREELANCER_ACCOUNT);
+    if (c < 3 && f > 4) {
+      const back = Math.floor((f - 3) * 100) / 100;
+      const { actions } = await import("near-api-js");
+      await freelancer.signAndSendTransaction({ receiverId: process.env.DEMO_CLIENT_ACCOUNT, actions: [actions.transfer(BigInt(toYocto(back)))] });
+      emit({ type: "log", line: `Demo recycler: freelancer returned ${back} testnet NEAR to the client so the demo keeps working.` });
+    }
+  } catch (e) { emit({ type: "log", line: `Demo recycler skipped: ${e.message}` }); }
+}
+
 const CRITERIA = { min_overall: 75, min_accessibility: 90, min_mobile: 90, min_seo: 80, max_broken_links: 0, forbid_malicious_scripts: true };
 app.post("/api/demo/job", async (req, res) => {
   if (!client) return res.status(400).json({ error: "Demo accounts are not configured" });
@@ -101,6 +120,7 @@ app.post("/api/demo/job", async (req, res) => {
     challenge_secs: CHALLENGE_SECS,
   };
   try {
+    await ensureDemoFunds(usdc);
     let tx, amountLabel;
     if (usdc) {
       // 50 tUSDC for the milestone + 6 audits × 0.25 tUSDC for the auditors (6 decimals)
@@ -111,10 +131,10 @@ app.post("/api/demo/job", async (req, res) => {
       const jobs = await view("get_jobs", {});
       tx.value = jobs[jobs.length - 1].id;
     } else {
-      const job = { ...base, milestones: [{ title: "Mobile-ready landing page", amount: toYocto(2) }], audit_fee: toYocto(0.01), audit_budget: toYocto(0.06) };
-      amountLabel = "2 NEAR (+0.06 NEAR audit budget)";
+      const job = { ...base, milestones: [{ title: "Mobile-ready landing page", amount: toYocto(DEMO_NEAR) }], audit_fee: toYocto(0.01), audit_budget: toYocto(0.06) };
+      amountLabel = `${DEMO_NEAR} NEAR (+0.06 NEAR audit budget)`;
       emit({ type: "log", line: `Client locks ${amountLabel} in the vault for "${base.title}"…` });
-      tx = await call(client, "create_job", { job }, { deposit: toYocto(2.06) });
+      tx = await call(client, "create_job", { job }, { deposit: toYocto(DEMO_NEAR + 0.06) });
     }
     emit({ type: "job_created", jobId: tx.value, amount: amountLabel, currency: usdc ? "tUSDC" : "NEAR", tx: tx.url, criteria: CRITERIA, challengeSecs: CHALLENGE_SECS });
     res.json({ jobId: tx.value, tx: tx.url });

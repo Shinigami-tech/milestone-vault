@@ -18,15 +18,16 @@ const info = await get("/api/info");
 console.log(`Vault ${info.vault} · auditors ${info.auditors.map((a) => a.account).join(", ")} · quorum ${info.config?.quorum} · window ${info.challengeSecs}s`);
 
 // 1. NEAR job: draft fails, final passes, paid after the window, gas paid by the relayer
+const j1 = (await post("/api/demo/job")).jobId; // may run the demo recycler first, so measure after it
 const b0 = await get("/api/balances");
-const j1 = (await post("/api/demo/job")).jobId;
 await post("/api/demo/submit", { jobId: j1, version: "v1" });
 check("Draft is rejected by the auditors", (await until(j1, ["Rejected"])) === "Rejected");
 await post("/api/demo/submit", { jobId: j1, version: "v2" });
 check("Final version is approved by 2 of 2 auditors", ["Approved", "Paying", "Released"].includes(await until(j1, ["Approved", "Released"])));
 check("Paid to the freelancer after the challenge window", (await until(j1, ["Released"], info.challengeSecs + 90)) === "Released");
 const b1 = await get("/api/balances");
-check("Freelancer received 2 NEAR and paid no gas", Math.abs(b1.freelancer.near - b0.freelancer.near - 2) < 0.0005, `${b0.freelancer.near} → ${b1.freelancer.near}`);
+const want = info.demoNear;
+check(`Freelancer received ${want} NEAR and paid no gas`, Math.abs(b1.freelancer.near - b0.freelancer.near - want) < 0.0005, `${b0.freelancer.near} → ${b1.freelancer.near}`);
 const job1 = await get(`/api/jobs/${j1}`);
 check("Each audit paid its auditor a fee from the client's budget", BigInt(job1.fees_paid) === BigInt(job1.audit_fee) * BigInt(job1.reports.length) && job1.reports.length >= 3, `${job1.reports.length} reports, ${Number(BigInt(job1.fees_paid)) / 1e24} NEAR in fees`);
 
