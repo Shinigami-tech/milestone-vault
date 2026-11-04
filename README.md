@@ -6,7 +6,7 @@ Built at NEAR HACKATHON (Nov 2026). Tracks: `security` (AI Security & Defense), 
 
 - **Live demo:** LIVE_DEMO_URL (NEAR testnet, no wallet needed)
 - **Video:** VIDEO_URL
-- **Vault contract (testnet):** VAULT_LINK
+- **Vault contract (testnet):** [mv2d711c-vault.testnet](https://testnet.nearblocks.io/address/mv2d711c-vault.testnet)
 
 ## The problem
 
