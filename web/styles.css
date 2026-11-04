@@ -126,3 +126,18 @@ button.danger:hover:not(:disabled) { background: #2a1212; }
   .contract { margin-left: 0; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* v2 additions */
+.lockrow { display: flex; gap: 8px; flex-wrap: wrap; }
+.lockrow .primary { flex: 1 1 140px; }
+.primary.alt { filter: hue-rotate(160deg); }
+.ghost { margin-top: 10px; width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid #d9534f; background: transparent; color: #ff8a80; font: inherit; cursor: pointer; }
+.ghost:hover { background: rgba(217, 83, 79, .12); }
+.votes { margin: 6px 0 0; font-family: "IBM Plex Mono", monospace; font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.votes .y { color: #7ee2a8; } .votes .n { color: #ff8a80; }
+.window { margin: 6px 0 0; text-align: center; font-size: 13px; color: #ffd27a; }
+.stmt { margin: 8px 0 0; text-align: center; font-size: 13px; }
+.stmt a { color: inherit; opacity: .8; }
+.console .aA::before { content: ""; } .console .aB { border-left: 2px solid #6aa9ff; padding-left: 6px; } .console .aA { border-left: 2px solid #b48cff; padding-left: 6px; }
+.layers { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.bal2 { margin: -6px 0 12px; font-family: "IBM Plex Mono", monospace; font-size: 15px; opacity: .8; }

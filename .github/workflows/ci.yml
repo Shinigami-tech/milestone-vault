@@ -1,0 +1,21 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  contract:
+    name: Contract unit tests (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: contract }
+      - run: cd contract && cargo test
+  js:
+    name: Auditor, relayer and AI-proof tests (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --omit=optional
+      - run: npm test

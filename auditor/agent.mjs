@@ -129,6 +129,12 @@ export function createAuditor({ id, accountId, key, dataDir, allowHosts = [], pu
       for (const s of ["desktop", "mobile"]) emit({ type: "shot", auditor: id, jobId, milestone: idx, device: s, src: `/runs/${dir.split("/").pop()}/${sb.dir.split("/").pop()}/out/${s}.png` });
       emit({ type: "verdict", auditor: id, jobId, milestone: idx, passed: verdict.passed, fails: verdict.fails, scores: dx.scores, overall: dx.overall, evidence: `${publicUrl}/evidence/${hash}.json`, hash, attestation: attestationHash && `${publicUrl}/attestations/${attestationHash}.json`, aiVerified: Boolean(summary.proof?.ok), summary: summary.text, summaryBy: summary.by });
 
+      const now = (await view("get_job", { job_id: jobId })).milestones[idx];
+      if (now.status !== "Submitted" || now.submitted_url !== url) {
+        log(`Already decided before my vote (status ${now.status}): the other auditor's verdict was enough. Evidence kept, no vote sent.`);
+        emit({ type: "skipped", auditor: id, jobId, milestone: idx, status: now.status });
+        return;
+      }
       log(`Auditor ${id} signs its vote with a function-call key (report/release on the vault only)…`);
       const tx = await call(signer, "report", { job_id: jobId, milestone: idx, passed: verdict.passed, overall: dx.overall, evidence_hash: hash, summary: summary.text, attestation_hash: attestationHash }, { gas: "150000000000000" });
       const after = await view("get_job", { job_id: jobId });

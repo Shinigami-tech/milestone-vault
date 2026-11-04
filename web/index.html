@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Milestone Vault · pay for websites only when they work</title>
-<meta name="description" content="An escrow on NEAR that pays a freelancer's website milestone only after a sandboxed AI auditor proves the site passes the agreed checks.">
+<meta name="description" content="An escrow on NEAR that pays a freelancer's website milestone only after two independent sandboxed AI auditors prove the site passes the agreed checks, and whose auditors cannot steal the money even if they are hijacked.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
@@ -20,42 +20,46 @@
   <section class="hero">
     <p class="kicker">Escrow · AI auditor · NEAR</p>
     <h1>Pay for a website <em>only when it works.</em></h1>
-    <p class="lead">The client locks the money in a NEAR contract. When the freelancer hands in the site, an AI auditor opens it in a throwaway sandbox and checks it against the agreed criteria. Pass, and the contract pays the freelancer on the spot. The auditor's key can't send money anywhere else, even if the agent is fooled.</p>
+    <p class="lead">The client locks NEAR or a stablecoin in a contract. When the freelancer hands in the site (gas-free), two independent AI auditors open it in throwaway sandboxes and check it against the agreed criteria. Both must agree. After a short challenge window the contract pays the freelancer. The auditors' keys can't send money anywhere else, and one hijacked auditor can't pay out alone.</p>
     <ol class="flow">
-      <li><b>1</b>Client locks NEAR</li>
-      <li><b>2</b>Freelancer submits the URL</li>
-      <li><b>3</b>Auditor examines it in a sandbox</li>
-      <li><b>4</b>Contract pays, or sends it back for fixes</li>
+      <li><b>1</b>Client locks NEAR or tUSDC</li>
+      <li><b>2</b>Freelancer submits the URL, gas paid by a relayer</li>
+      <li><b>3</b>2 auditors examine it in sandboxes</li>
+      <li><b>4</b>2 of 2 pass → challenge window → paid</li>
     </ol>
   </section>
 
   <section class="room" aria-label="Deal room">
     <article class="card party">
       <header><span class="role">Client</span><code id="clientId"></code></header>
-      <p class="bal"><span id="clientBal">–</span> <small>NEAR</small></p>
-      <button class="primary" id="lock" type="button">Lock 2 NEAR for the website</button>
+      <p class="bal"><span id="clientBal">–</span> <small>NEAR</small></p><p class="bal2"><span id="clientUsdc">–</span> tUSDC</p>
+      <div class="lockrow"><button class="primary" id="lock" type="button" data-cur="near">Lock 2 NEAR</button><button class="primary alt" id="lockUsdc" type="button" data-cur="usdc">Lock 50 tUSDC</button></div>
+      <button class="ghost" id="dispute" type="button" hidden>Dispute this payout</button>
       <ul class="criteria" id="criteria" aria-label="Agreed criteria"></ul>
     </article>
 
     <article class="card vault" id="vaultCard">
       <header><span class="role">Vault</span><span class="pill" id="status">No job yet</span></header>
       <div class="safe" aria-hidden="true"><div class="door" id="door"><span></span></div></div>
-      <p class="locked"><span id="locked">0</span> <small>NEAR locked</small></p>
+      <p class="locked"><span id="locked">0</span> <small id="lockedCur">locked</small></p>
+      <p class="votes" id="votes" hidden></p>
+      <p class="window" id="window" hidden></p>
+      <p class="stmt"><a id="csv" hidden>Download statement (CSV)</a></p>
       <ol class="chain" id="chain" aria-label="On-chain events"><li class="empty">Transactions appear here.</li></ol>
     </article>
 
     <article class="card party">
       <header><span class="role">Freelancer</span><code id="devId"></code></header>
-      <p class="bal"><span id="devBal">–</span> <small>NEAR</small></p>
-      <p class="hint">Hand in a version of the site:</p>
+      <p class="bal"><span id="devBal">–</span> <small>NEAR</small></p><p class="bal2"><span id="devUsdc">–</span> tUSDC</p>
+      <p class="hint">Hand in a version of the site <span class="pill soft">gas paid by the relayer</span></p>
       <div class="versions" id="versions"></div>
     </article>
   </section>
 
   <section class="card auditor" aria-label="Auditor">
     <header>
-      <div><span class="role">AI auditor</span> <code id="auditorId"></code></div>
-      <span class="pill soft" id="keyPill">function-call key · report() only</span>
+      <div><span class="role">AI auditors · quorum 2 of 2</span> <code id="auditorId"></code></div>
+      <span class="pill soft" id="keyPill">function-call keys · report() / release() only</span>
     </header>
     <div class="aud-grid">
       <div class="console" id="console" aria-live="polite"><div class="dim">Waiting for a submission…</div></div>
@@ -64,7 +68,7 @@
         <table class="checks"><thead><tr><th>Check</th><th>Needed</th><th>Got</th><th></th></tr></thead><tbody id="checks"></tbody></table>
         <div class="threats" id="threats"></div>
         <p class="summary" id="summary"></p>
-        <p class="evidence"><a id="evidence" target="_blank" rel="noopener">Evidence report</a> · sha256 <code id="hash"></code> stored on chain</p>
+        <p class="evidence"><a id="evidence" target="_blank" rel="noopener">Evidence report</a> · sha256 <code id="hash"></code> stored on chain<span id="proof"></span></p>
       </div>
       <figure class="phone" id="phone" hidden><img id="shot" alt="The submitted site on a phone, as the auditor saw it"><figcaption>What the auditor saw (phone)</figcaption></figure>
     </div>
@@ -72,10 +76,10 @@
 
   <section class="card attack" aria-label="Attack demo">
     <header>
-      <div><span class="role red">Attack demo</span><h2>Try to rob the vault with the auditor's key</h2></div>
+      <div><span class="role red">Attack demo</span><h2>Try to rob the vault with a hijacked auditor</h2></div>
       <button class="danger" id="attack" type="button">Run the attack</button>
     </header>
-    <p class="hint">Assume the AI auditor is fully compromised. Each line below is a real signed transaction on testnet using its real key.</p>
+    <p class="hint">Assume auditor A is fully compromised and the freelancer colludes with it. Each line below is a real signed transaction on testnet using A's real key.</p>
     <ol class="attempts" id="attempts"></ol>
     <p class="held" id="held" hidden></p>
   </section>
@@ -83,7 +87,10 @@
   <section class="layers">
     <div><h3>Code decides</h3><p>Pass or fail is plain code comparing measured scores with the criteria the client locked in. The language model only writes the note.</p></div>
     <div><h3>Sandbox measures</h3><p>Each audit runs in a fresh, unprivileged container with no keys. Hostile scripts and hidden instructions on the site are recorded as findings.</p></div>
-    <div><h3>NEAR enforces</h3><p>The contract pays only the job's freelancer, only that milestone's amount. The auditor holds a function-call key that can call <code>report</code> and nothing else.</p></div>
+    <div><h3>NEAR enforces</h3><p>The contract pays only the job's freelancer, only that milestone's amount. Each auditor holds a function-call key that can call <code>report</code>/<code>release</code> and nothing else. The vault has no keys at all: its code can't be changed.</p></div>
+    <div><h3>Quorum + window</h3><p>Two independent auditors must both pass a milestone, then the client has a challenge window to dispute before any money moves. One hijacked agent can't pay out.</p></div>
+    <div><h3>Verifiable AI</h3><p>The note is written by NEAR AI Cloud inside a TEE. Its signature is checked against a fresh attestation and the proof's hash is stored on chain next to the verdict.</p></div>
+    <div><h3>Real-world money</h3><p>Pay in NEAR or a NEP-141 stablecoin. The freelancer submits gas-free through a meta-transaction relayer that only pays for <code>submit</code>. Accountants get a CSV.</p></div>
   </section>
 </main>
 <footer class="foot"><p>Milestone Vault · MIT · runs on NEAR testnet. Sister project: <a href="https://github.com/Shinigami-tech/sitedoctor">SiteDoctor</a> (its audit engine is reused here).</p></footer>

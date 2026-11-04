@@ -16,12 +16,15 @@ import { Account, JsonRpcProvider, KeyPair, KeyPairSigner, actions } from "near-
 
 const RPC = process.env.NEAR_RPC || "https://test.rpc.fastnear.com";
 const provider = new JsonRpcProvider({ url: RPC });
-const WASM = new URL("../contract/target/near/milestone_vault.wasm", import.meta.url).pathname;
-const TOKEN_WASM = new URL("../token/target/near/tusdc.wasm", import.meta.url).pathname;
+// Freshly built wasm if present, else the committed release build (so no Rust is needed to deploy).
+const pick = (built, committed) => { const b = new URL(built, import.meta.url).pathname; return existsSync(b) ? b : new URL(committed, import.meta.url).pathname; };
+const WASM = pick("../contract/target/near/milestone_vault.wasm", "../contract/res/milestone_vault.wasm");
+const TOKEN_WASM = pick("../token/target/near/tusdc.wasm", "../token/res/tusdc.wasm");
 const ENV = new URL("../.env", import.meta.url).pathname;
 const TGAS = 1_000_000_000_000n;
 
 for (const f of [WASM, TOKEN_WASM]) if (!existsSync(f)) { console.error(`Missing ${f}. Run: npm run build:contract && npm run build:token`); process.exit(1); }
+console.log(`Using ${WASM.split("/").slice(-3).join("/")} (sha256 ${(await import("node:crypto")).createHash("sha256").update(readFileSync(WASM)).digest("hex").slice(0, 16)}…)`);
 if (existsSync(ENV) && !process.argv.includes("--force")) { console.error(".env already exists. Re-run with --force to create a new deployment."); process.exit(1); }
 
 const prefix = "mv" + randomBytes(3).toString("hex");
@@ -107,5 +110,6 @@ RELAYER_KEY=${keys.relayer}
 NEARAI_API_KEY=
 NEARAI_MODEL=
 PORT=8090
+${process.env.MV_EXTRA_ENV || ""}
 `);
 console.log(`\nDone. Vault: https://testnet.nearblocks.io/address/${names.vault}\nNext: npm start`);
