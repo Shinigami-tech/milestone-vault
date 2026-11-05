@@ -70,8 +70,18 @@ async function attest(model, chatId, requestHash, responseHash) {
   const sig = await (await fetch(`${BASE}/signature/${encodeURIComponent(chatId)}?signing_algo=ecdsa`, { headers: H() })).json().catch(() => null);
   const check = checkSignature({ sig, model, requestHash, responseHash });
   const nonce = randomBytes(32).toString("hex");
-  const q = new URLSearchParams({ model, provider: "near", include_tls_fingerprint: "false", signing_algo: "ecdsa", nonce });
-  const rep = await (await fetch(`${BASE}/attestation/report?${q}`, { headers: { ...H(), "x-no-aliasing": "true" } })).json().catch(() => ({}));
+  // A gateway signature is attested by the gateway's own report; a provider_tee signature by the model's.
+  const variants = sig?.signature_kind === "gateway"
+    ? [{ signing_algo: "ecdsa", nonce }, { model, signing_algo: "ecdsa", nonce }]
+    : [{ model, provider: "near", include_tls_fingerprint: "false", signing_algo: "ecdsa", nonce }, { model, signing_algo: "ecdsa", nonce }];
+  let rep = {}, reportErrors = [];
+  for (const v of variants) {
+    const r = await fetch(`${BASE}/attestation/report?${new URLSearchParams(v)}`, { headers: { ...H(), "x-no-aliasing": "true" } }).catch((e) => ({ ok: false, text: async () => e.message }));
+    const text = await r.text();
+    let j = {}; try { j = JSON.parse(text); } catch {}
+    if (r.ok && !j.error) { rep = j; break; }
+    reportErrors.push(`${r.status || "network"}: ${(j.error?.message || j.error || text).toString().slice(0, 160)}`);
+  }
   const addr = String(sig?.signing_address || "").toLowerCase();
   const matches = (rep.model_attestations || []).filter((a) => a.request_nonce === nonce && String(a.signing_address).toLowerCase() === addr);
   const bound = sig?.signature_kind === "gateway" ? gatewayBound(rep, addr, nonce) : matches.length === 1;
@@ -79,8 +89,8 @@ async function attest(model, chatId, requestHash, responseHash) {
     provider: "NEAR AI Cloud", model, chat_id: chatId, request_hash: requestHash, response_hash: responseHash,
     signature: sig && { text: sig.text, signature: sig.signature, signing_address: sig.signing_address, signing_algo: sig.signing_algo, signature_kind: sig.signature_kind },
     nonce, quote_sha256: matches[0]?.intel_quote ? sha256(matches[0].intel_quote) : findQuote(rep, addr), gpu_evidence: Boolean(matches[0]?.nvidia_payload),
-    report_fields: Object.keys(rep || {}),
-    verified: { signature: check.ok, signer_in_attestation: bound, why: check.ok ? (bound ? "ok" : "signer not found in a fresh attestation report") : check.why },
+    report_fields: Object.keys(rep || {}), report_errors: reportErrors.length ? reportErrors : undefined,
+    verified: { signature: check.ok, signer_in_attestation: bound, why: check.ok ? (bound ? "ok" : reportErrors.length && !Object.keys(rep).length ? `attestation report unavailable (${reportErrors.at(-1)})` : "signer not found in a fresh attestation report") : check.why },
     verify_at: "https://cloud.near.ai/verify",
   };
   const body = JSON.stringify(bundle, null, 2);
