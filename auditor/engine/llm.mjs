@@ -48,18 +48,38 @@ export function checkSignature({ sig, model, requestHash, responseHash }) {
   return { ok: true, signer };
 }
 
+
+/** Every object in a JSON tree (attestation reports nest the gateway entry differently across versions). */
+function* walk(o) { if (o && typeof o === "object") { yield o; for (const v of Object.values(o)) yield* walk(v); } }
+/**
+ * A gateway-signed response is bound when the fresh report (made for OUR nonce) contains an attestation
+ * entry whose signing address is the one that signed the response. Exported for tests.
+ */
+export function gatewayBound(rep, addr, nonce) {
+  if (!addr || !rep) return false;
+  const nonceSeen = JSON.stringify(rep).includes(nonce);
+  for (const o of walk(rep)) if (String(o.signing_address || "").toLowerCase() === addr) return nonceSeen;
+  return false;
+}
+function findQuote(rep, addr) {
+  for (const o of walk(rep)) if (String(o.signing_address || "").toLowerCase() === addr && o.intel_quote) return sha256(o.intel_quote);
+  return null;
+}
+
 async function attest(model, chatId, requestHash, responseHash) {
   const sig = await (await fetch(`${BASE}/signature/${encodeURIComponent(chatId)}?signing_algo=ecdsa`, { headers: H() })).json().catch(() => null);
   const check = checkSignature({ sig, model, requestHash, responseHash });
   const nonce = randomBytes(32).toString("hex");
   const q = new URLSearchParams({ model, provider: "near", include_tls_fingerprint: "false", signing_algo: "ecdsa", nonce });
   const rep = await (await fetch(`${BASE}/attestation/report?${q}`, { headers: { ...H(), "x-no-aliasing": "true" } })).json().catch(() => ({}));
-  const matches = (rep.model_attestations || []).filter((a) => a.request_nonce === nonce && String(a.signing_address).toLowerCase() === String(sig?.signing_address).toLowerCase());
-  const bound = sig?.signature_kind === "gateway" ? Boolean(rep.gateway_attestation) : matches.length === 1;
+  const addr = String(sig?.signing_address || "").toLowerCase();
+  const matches = (rep.model_attestations || []).filter((a) => a.request_nonce === nonce && String(a.signing_address).toLowerCase() === addr);
+  const bound = sig?.signature_kind === "gateway" ? gatewayBound(rep, addr, nonce) : matches.length === 1;
   const bundle = {
     provider: "NEAR AI Cloud", model, chat_id: chatId, request_hash: requestHash, response_hash: responseHash,
     signature: sig && { text: sig.text, signature: sig.signature, signing_address: sig.signing_address, signing_algo: sig.signing_algo, signature_kind: sig.signature_kind },
-    nonce, quote_sha256: matches[0]?.intel_quote ? sha256(matches[0].intel_quote) : null, gpu_evidence: Boolean(matches[0]?.nvidia_payload),
+    nonce, quote_sha256: matches[0]?.intel_quote ? sha256(matches[0].intel_quote) : findQuote(rep, addr), gpu_evidence: Boolean(matches[0]?.nvidia_payload),
+    report_fields: Object.keys(rep || {}),
     verified: { signature: check.ok, signer_in_attestation: bound, why: check.ok ? (bound ? "ok" : "signer not found in a fresh attestation report") : check.why },
     verify_at: "https://cloud.near.ai/verify",
   };

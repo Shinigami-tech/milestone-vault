@@ -22,7 +22,7 @@ fetch("/api/info").then((r) => r.json()).then((j) => {
   $("#auditorId").innerHTML = j.auditors.map((a) => `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.id)}: ${esc(short(a.account))}</a>`).join(" · ");
   if (!j.demo) { for (const b of ["#lock", "#lockUsdc"]) $(b).disabled = true; $("#lock").textContent = "Demo accounts not configured"; }
   if (!j.token) $("#lockUsdc").hidden = true;
-  $("#versions").innerHTML = Object.entries(j.versions).map(([k, v]) => `<div class="v"><button type="button" data-v="${k}" disabled>${esc(k === "v1" ? "Draft" : k === "trap" ? "Polished" : "Final")}<small>${esc(v.label)}</small></button><a href="${esc(v.url)}" target="_blank" rel="noopener" aria-label="Open ${esc(v.label)}">↗</a></div>`).join("");
+  $("#versions").innerHTML = Object.entries(j.versions).map(([k, v]) => `<div class="v"><button type="button" data-v="${k}" disabled>${esc(k === "v1" ? "Draft" : k === "trap" ? "Polished" : "Final")}<small>${esc(v.label)}</small></button><a href="${esc(here(v.url))}" target="_blank" rel="noopener" aria-label="Open ${esc(v.label)}">↗</a></div>`).join("");
   document.querySelectorAll("#versions button").forEach((b) => b.addEventListener("click", () => submit(b.dataset.v)));
   restore();
 });
@@ -155,6 +155,9 @@ function handle(e) {
 function spin() { const d = $("#door"); d.className = "door"; void d.offsetWidth; d.classList.add("spin"); }
 function door(ok) { const d = $("#door"); d.classList.add(ok ? "open" : "shut"); }
 
+// Links to the demo server's own files follow the address the page was opened on (HTTPS via Vercel or the VM).
+function here(u) { try { const x = new URL(u, location.href); return x.pathname.startsWith("/evidence/") || x.pathname.startsWith("/attestations/") || x.pathname.startsWith("/sites/") ? x.pathname + x.search : u; } catch { return u; } }
+
 function verdict(v) {
   $("#verdict").hidden = false;
   $("#vTitle").textContent = `Auditor ${v.auditor}: ` + (v.passed ? "✔ passed (needs the other auditor too)" : "✖ not passed");
@@ -172,8 +175,8 @@ function verdict(v) {
     ...injs.map((x) => `<div class="threat inj"><b>⚠ Prompt injection found · ignored</b><q>${esc(x.text)}</q></div>`),
   ].join("");
   $("#summary").textContent = v.summary + (String(v.summaryBy).startsWith("near-ai") ? "  — note by NEAR AI Cloud" : "");
-  $("#evidence").href = v.evidence; $("#hash").textContent = v.hash.slice(0, 16) + "…";
-  $("#proof").innerHTML = v.attestation ? ` · <a href="${esc(v.attestation)}" target="_blank" rel="noopener">${v.aiVerified ? "🔏 TEE-signed note (verified)" : "AI proof (unverified)"}</a>` : "";
+  $("#evidence").href = here(v.evidence); $("#hash").textContent = v.hash.slice(0, 16) + "…";
+  $("#proof").innerHTML = v.attestation ? ` · <a href="${esc(here(v.attestation))}" target="_blank" rel="noopener">${v.aiVerified ? "🔏 TEE-signed note (verified)" : "AI proof (unverified)"}</a>` : "";
 }
 
 $("#attack").addEventListener("click", async () => {

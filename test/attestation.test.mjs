@@ -22,3 +22,12 @@ test("a signature by another key claiming the TEE's address is rejected", async 
 test("missing signatures are never treated as verified", () => {
   assert.equal(checkSignature({ sig: { error_code: "not_found" }, model, requestHash, responseHash }).ok, false);
 });
+
+test("gateway signature is bound only by a fresh report that names the same signer", async () => {
+  const { gatewayBound } = await import("../auditor/engine/llm.mjs");
+  const addr = "0xb98a789cdc4817275f5155593ba73ef2a957e779", nonce = "ab".repeat(32);
+  const rep = { gateway_attestation: { attestation: { signing_address: addr.toUpperCase().replace("0X", "0x"), request_nonce: nonce } } };
+  assert.equal(gatewayBound(rep, addr, nonce), true);
+  assert.equal(gatewayBound(rep, addr, "cd".repeat(32)), false, "stale report (other nonce)");
+  assert.equal(gatewayBound({ gateway_attestation: { signing_address: "0x0000000000000000000000000000000000000001", request_nonce: nonce } }, addr, nonce), false, "other signer");
+});
