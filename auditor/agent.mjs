@@ -151,6 +151,9 @@ export function createAuditor({ id, accountId, key, dataDir, allowHosts = [], pu
       log(`On chain: ${tx.url} · votes ${st.votes.filter((v) => v.passed).length} pass / ${st.votes.length} · status ${st.status}`);
       emit({ type: "reported", auditor: id, jobId, milestone: idx, passed: verdict.passed, tx: tx.url, logs: tx.logs, status: st.status, releaseAt: st.release_at });
     } catch (e) {
+      // Any one FAIL decides a milestone (quorum needs every auditor), so the slower auditor's vote can
+      // arrive after the decision. The contract refuses it: that is the rule working, not an error.
+      if (/not waiting for an audit/i.test(e.message)) { log(`Milestone already decided by the other auditor's vote; this vote is not needed (contract refused a late vote).`); return; }
       log(`Audit error: ${e.message}`);
       emit({ type: "audit_error", auditor: id, jobId, milestone: idx, message: e.message, tx: e.url });
     } finally {
