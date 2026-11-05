@@ -109,9 +109,7 @@ async function ensureDemoFunds(usdc) {
 }
 
 const CRITERIA = { min_overall: 75, min_accessibility: 90, min_mobile: 90, min_seo: 80, max_broken_links: 0, forbid_malicious_scripts: true };
-app.post("/api/demo/job", async (req, res) => {
-  if (!client) return res.status(400).json({ error: "Demo accounts are not configured" });
-  const usdc = req.body?.currency === "usdc" && TUSDC;
+async function createDemoJob(usdc) {
   const base = {
     freelancer: process.env.DEMO_FREELANCER_ACCOUNT,
     title: "Daily Grind coffee shop website",
@@ -119,26 +117,29 @@ app.post("/api/demo/job", async (req, res) => {
     deadline_secs: 7 * 24 * 3600,
     challenge_secs: CHALLENGE_SECS,
   };
-  try {
-    await ensureDemoFunds(usdc);
-    let tx, amountLabel;
-    if (usdc) {
-      // 50 tUSDC for the milestone + 6 audits × 0.25 tUSDC for the auditors (6 decimals)
-      const job = { ...base, milestones: [{ title: "Mobile-ready landing page", amount: "50000000" }], audit_fee: "250000", audit_budget: "1500000" };
-      amountLabel = "50 tUSDC (+1.5 tUSDC audit budget)";
-      emit({ type: "log", line: `Client locks ${amountLabel} in the vault via ft_transfer_call…` });
-      tx = await call(client, "ft_transfer_call", { receiver_id: VAULT, amount: "51500000", msg: JSON.stringify(job) }, { deposit: "1", gas: "150000000000000", receiverId: TUSDC });
-      const jobs = await view("get_jobs", {});
-      tx.value = jobs[jobs.length - 1].id;
-    } else {
-      const job = { ...base, milestones: [{ title: "Mobile-ready landing page", amount: toYocto(DEMO_NEAR) }], audit_fee: toYocto(0.01), audit_budget: toYocto(0.06) };
-      amountLabel = `${DEMO_NEAR} NEAR (+0.06 NEAR audit budget)`;
-      emit({ type: "log", line: `Client locks ${amountLabel} in the vault for "${base.title}"…` });
-      tx = await call(client, "create_job", { job }, { deposit: toYocto(DEMO_NEAR + 0.06) });
-    }
-    emit({ type: "job_created", jobId: tx.value, amount: amountLabel, currency: usdc ? "tUSDC" : "NEAR", tx: tx.url, criteria: CRITERIA, challengeSecs: CHALLENGE_SECS });
-    res.json({ jobId: tx.value, tx: tx.url });
-  } catch (e) { emit({ type: "log", line: `create_job failed: ${e.message}` }); res.status(500).json({ error: e.message, tx: e.url }); }
+  await ensureDemoFunds(usdc);
+  let tx, amountLabel;
+  if (usdc) {
+    // 50 tUSDC for the milestone + 6 audits × 0.25 tUSDC for the auditors (6 decimals)
+    const job = { ...base, milestones: [{ title: "Mobile-ready landing page", amount: "50000000" }], audit_fee: "250000", audit_budget: "1500000" };
+    amountLabel = "50 tUSDC (+1.5 tUSDC audit budget)";
+    emit({ type: "log", line: `Client locks ${amountLabel} in the vault via ft_transfer_call…` });
+    tx = await call(client, "ft_transfer_call", { receiver_id: VAULT, amount: "51500000", msg: JSON.stringify(job) }, { deposit: "1", gas: "150000000000000", receiverId: TUSDC });
+    const jobs = await view("get_jobs", {});
+    tx.value = jobs[jobs.length - 1].id;
+  } else {
+    const job = { ...base, milestones: [{ title: "Mobile-ready landing page", amount: toYocto(DEMO_NEAR) }], audit_fee: toYocto(0.01), audit_budget: toYocto(0.06) };
+    amountLabel = `${DEMO_NEAR} NEAR (+0.06 NEAR audit budget)`;
+    emit({ type: "log", line: `Client locks ${amountLabel} in the vault for "${base.title}"…` });
+    tx = await call(client, "create_job", { job }, { deposit: toYocto(DEMO_NEAR + 0.06) });
+  }
+  emit({ type: "job_created", jobId: tx.value, amount: amountLabel, currency: usdc ? "tUSDC" : "NEAR", tx: tx.url, criteria: CRITERIA, challengeSecs: CHALLENGE_SECS });
+  return { jobId: tx.value, tx: tx.url };
+}
+app.post("/api/demo/job", async (req, res) => {
+  if (!client) return res.status(400).json({ error: "Demo accounts are not configured" });
+  try { res.json(await createDemoJob(req.body?.currency === "usdc" && TUSDC)); }
+  catch (e) { emit({ type: "log", line: `create_job failed: ${e.message}` }); res.status(500).json({ error: e.message, tx: e.url }); }
 });
 
 app.post("/api/demo/submit", async (req, res) => {
@@ -181,7 +182,17 @@ app.post("/api/demo/attack", async (req, res) => {
   if (attacking) return res.status(409).json({ error: "Attack already running" });
   attacking = true;
   res.json({ started: true });
-  try { await runAttack((ev) => emit(ev), { freelancer, trapUrl: `${SITES_URL}/trap.html` }); } catch (e) { emit({ type: "attack_done", held: null, error: e.message }); } finally { attacking = false; }
+  try {
+    // The quorum/collusion attacks need a job with an open milestone: make one if the vault has none,
+    // so a judge on a fresh demo always sees every attack.
+    const jobs = (await view("get_jobs", {})) || [];
+    const hasOpen = jobs.some((j) => j.milestones.some((m) => m.status === "Open" || m.status === "Rejected"));
+    if (!hasOpen && client) {
+      emit({ type: "log", line: "Attack lab: creating a fresh escrow job so the quorum attacks have money to aim at…" });
+      await createDemoJob(false);
+    }
+    await runAttack((ev) => emit(ev), { freelancer, trapUrl: `${SITES_URL}/trap.html` });
+  } catch (e) { emit({ type: "attack_done", held: null, error: e.message }); } finally { attacking = false; }
 });
 
 app.get("/api/events", (req, res) => {
