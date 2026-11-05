@@ -138,7 +138,7 @@ export function createAuditor({ id, accountId, key, dataDir, allowHosts = [], pu
       for (const s of ["desktop", "mobile"]) emit({ type: "shot", auditor: id, jobId, milestone: idx, device: s, src: `/runs/${dir.split("/").pop()}/${sb.dir.split("/").pop()}/out/${s}.png` });
       emit({ type: "verdict", auditor: id, jobId, milestone: idx, passed: verdict.passed, fails: verdict.fails, scores: dx.scores, overall: dx.overall, evidence: `${publicUrl}/evidence/${hash}.json`, hash, attestation: attestationHash && `${publicUrl}/attestations/${attestationHash}.json`, aiVerified: Boolean(summary.proof?.ok), summary: summary.text, summaryBy: summary.by });
 
-      const now = (await view("get_job", { job_id: jobId })).milestones[idx];
+      const now = (await view("get_job", { job_id: jobId }, { fresh: true })).milestones[idx];
       if (now.status !== "Submitted" || now.submitted_url !== url) {
         log(`Already decided before my vote (status ${now.status}): the other auditor's verdict was enough. Evidence kept, no vote sent.`);
         emit({ type: "skipped", auditor: id, jobId, milestone: idx, status: now.status });
@@ -188,5 +188,5 @@ export function createAuditor({ id, accountId, key, dataDir, allowHosts = [], pu
     } catch {}
   }
 
-  return { id, accountId, start: (ms = 4000) => { tick(); return [setInterval(tick, ms), keeper && setInterval(keep, ms * 2)]; }, auditOne, keep, enabled: Boolean(signer) };
+  return { id, accountId, start: (ms = 5000) => { tick(); return [setInterval(tick, ms), keeper && setInterval(keep, ms * 2)]; }, auditOne, keep, enabled: Boolean(signer) };
 }
