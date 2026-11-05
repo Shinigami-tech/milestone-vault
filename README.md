@@ -4,7 +4,7 @@
 
 Built at NEAR HACKATHON (Nov 2026). Tracks: `security` (AI Security & Defense), `realworld` (Real-World Money), `agents` (Agent Economy).
 
-- **Live demo:** [http://45.32.237.182:8090](http://45.32.237.182:8090) (NEAR testnet, no wallet needed)
+- **Live demo:** [milestone-vault.vercel.app](https://milestone-vault.vercel.app) (NEAR testnet, no wallet needed; HTTPS front door on Vercel, the agents and sandboxes run on a Vultr VM at http://45.32.237.182:8090)
 - **Video:** VIDEO_URL
 - **Vault contract (testnet):** [mve94717-vault.testnet](https://testnet.nearblocks.io/address/mve94717-vault.testnet) (the live demo's own deployment)
 
@@ -40,7 +40,7 @@ The obvious fix is an AI that checks the work and releases the payment. But an A
 
 ## Try it (judges: do X, see Y)
 
-**On the live demo** ([http://45.32.237.182:8090](http://45.32.237.182:8090)), or locally (below). Everything is NEAR testnet.
+**On the live demo** ([milestone-vault.vercel.app](https://milestone-vault.vercel.app)), or locally (below). Everything is NEAR testnet.
 
 1. **Click "Lock 0.5 NEAR".** See the client's balance drop, the vault show *0.5 NEAR locked*, the criteria (incl. *Challenge window 45s*, *Audit fee 0.01 NEAR / audit*), and a `create_job` tx link under Vault.
 2. **Click "Draft".** See the transaction note *gas paid by relayer*, the auditors' console open sandboxes, then *✖ Criteria not met: Accessibility 58 < 90; Mobile 19 < 90; …; 2 broken link(s)*. The vault shows *Not paid · needs fixes* with a `report` tx. One fail is enough.
