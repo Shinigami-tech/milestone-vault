@@ -21,10 +21,15 @@ export const modelName = () => MODEL || "(auto)";
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 const H = () => ({ Authorization: `Bearer ${KEY}`, Accept: "application/json" });
 
-async function pickModel() {
-  if (MODEL) return MODEL;
+let checked = false;
+export async function pickModel() {
+  if (checked && MODEL) return MODEL;
   const j = await (await fetch(`${BASE}/models`, { headers: H() })).json();
   const ids = (j.data || []).map((m) => m.id);
+  checked = true;
+  if (MODEL && ids.includes(MODEL)) return MODEL;
+  // A configured model id that NEAR AI Cloud doesn't serve (typo, retired model) falls back to auto-selection.
+  if (MODEL) console.warn(`NEARAI_MODEL "${MODEL}" is not served by NEAR AI Cloud; picking one automatically.`);
   const pref = [/glm/i, /qwen/i, /deepseek/i, /gpt-oss/i, /llama/i];
   MODEL = pref.map((re) => ids.find((id) => re.test(id))).find(Boolean) || ids[0];
   return MODEL;

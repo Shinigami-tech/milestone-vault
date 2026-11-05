@@ -6,7 +6,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createAuditor } from "../auditor/agent.mjs";
-import { llmEnabled, modelName } from "../auditor/engine/llm.mjs";
+import { llmEnabled, modelName, pickModel } from "../auditor/engine/llm.mjs";
 import { CONTAINMENT_POLICY } from "../auditor/engine/sandbox.mjs";
 import { runAttack } from "../lib/attack.mjs";
 import { gaslessSubmit, RELAY_METHODS } from "../lib/relayer.mjs";
@@ -209,6 +209,7 @@ app.get("/api/events", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Milestone Vault on ${PUBLIC_URL} · vault ${VAULT} (${NETWORK}) · auditors ${auditors.filter((a) => a.enabled).map((a) => a.accountId).join(", ") || "off"} · note: ${llmEnabled() ? "NEAR AI " + modelName() : "rules"}`);
   auditors.forEach((a, i) => a.enabled && setTimeout(() => a.start(4000), i * 1500));
+  if (llmEnabled()) pickModel().then((m) => console.log(`NEAR AI Cloud model: ${m}`)).catch((e) => console.warn(`NEAR AI Cloud model check failed: ${e.message}`));
 });
 
 export { txUrl };
