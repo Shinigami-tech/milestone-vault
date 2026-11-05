@@ -79,7 +79,9 @@ export async function chat(messages, { maxTokens = 1800, temperature = 0.2, atte
   const resText = await r.text();
   if (!r.ok) throw new Error(`NEAR AI Cloud ${r.status}: ${resText.slice(0, 200)}`);
   const j = JSON.parse(resText);
-  const content = (j.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trim();
+  const msg = j.choices?.[0]?.message || {};
+  const content = (msg.content || "").replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trim();
+  if (!content && (msg.reasoning_content || msg.reasoning)) throw new Error(`${model} spent its whole budget reasoning (finish_reason ${j.choices?.[0]?.finish_reason})`);
   if (!wantProof) return content;
   let proof = null;
   try { proof = await attest(model, j.id, sha256(reqBody), sha256(resText)); } catch (e) { proof = { ok: false, error: e.message }; }
