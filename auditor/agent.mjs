@@ -58,6 +58,16 @@ export function judge(dx, report, criteria, injection) {
   return { passed: fails.length === 0, fails };
 }
 
+/** Trim a note to the contract's 280-char limit at a sentence (or word) boundary. Exported for tests. */
+export function fitNote(text, max = 280) {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  if (end > max * 0.4) return cut.slice(0, end + 1);
+  return cut.slice(0, cut.lastIndexOf(" ")).replace(/[,;:—-]+$/, "") + "…";
+}
+
 /** True when an AI note states the opposite of the code's verdict. Exported for tests. */
 export function contradicts(note, passed) {
   return passed
@@ -78,7 +88,7 @@ async function writeSummary({ job, m, dx, verdict, injection, who }) {
     if (!content) return { text: fallback, by: "rules", error: "the model returned an empty note" };
     // Belt and braces: a note that contradicts the code's verdict is discarded.
     if (contradicts(content, verdict.passed)) return { text: fallback, by: "rules", error: "the note contradicted the verdict, discarded" };
-    return { text: content.slice(0, 280), by: `near-ai:${modelName()}`, proof };
+    return { text: fitNote(content), by: `near-ai:${modelName()}`, proof };
   } catch (e) {
     return { text: fallback, by: "rules", error: e.message };
   }
