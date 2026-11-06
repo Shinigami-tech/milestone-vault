@@ -2,10 +2,10 @@
 
 **An escrow on NEAR that pays a freelancer's website milestone only after two independent, sandboxed AI auditors prove the site passes the agreed checks, and whose AI auditors cannot steal the money even if one of them is fully hijacked.**
 
-Built at NEAR HACKATHON (Nov 2026). Tracks: `security` (AI Security & Defense), `realworld` (Real-World Money), `agents` (Agent Economy).
+Built at NEAR HACKATHON (Nov 2026). Tracks: `security` (AI Security & Defense), `realworld` (Real-World Money), `agents` (Agent Economy), `privacy` (Privacy & Private AI).
 
 - **Live demo:** [milestone-vault.vercel.app](https://milestone-vault.vercel.app) (NEAR testnet, no wallet needed; HTTPS front door on Vercel, the agents and sandboxes run on a Vultr VM at http://45.32.237.182:8090)
-- **Video:** VIDEO_URL
+- **Video (1:51):** [docs/milestone-vault-demo.mp4](docs/milestone-vault-demo.mp4): lock → prompt-injection trap caught → TEE-verified AI note → payout → 7/7 attacks blocked
 - **Vault contract (testnet):** [mve94717-vault.testnet](https://testnet.nearblocks.io/address/mve94717-vault.testnet) (the live demo's own deployment)
 
 ## The problem
@@ -19,7 +19,7 @@ The obvious fix is an AI that checks the work and releases the payment. But an A
 1. **The client locks the payment** for each milestone in the vault, in NEAR or a NEP-141 stablecoin, together with measurable criteria (minimum accessibility, mobile and SEO scores, zero broken links, no hostile scripts) and a small prepaid **audit budget**.
 2. **The freelancer submits** the milestone's URL. It is a NEP-366 **meta transaction**: a relayer pays the gas, so the freelancer never needs to buy NEAR.
 3. **Two independent auditor agents** each open the site in their own fresh, unprivileged Docker sandbox (desktop and phone), measure it, and compare the numbers with the criteria. Each signs its vote with its own function-call key and earns a fee from the audit budget.
-4. **The contract decides:** both auditors must pass the milestone (quorum 2 of 2), and any one of them can block it. A pass opens a **challenge window** in which the client can dispute; after it, anyone can trigger the payout. Every vote carries a sha256 of the full evidence report, and of the AI note's TEE attestation.
+4. **The contract decides:** both auditors must pass the milestone (quorum 2 of 2), and any one of them can block it. A pass opens a **challenge window** in which the client can dispute; after it, anyone can trigger the payout. Every vote carries a sha256 of the full evidence report, and of the AI note's TEE attestation: the note is written by NEAR AI Cloud inside a TEE, and the auditor verifies the signature against a fresh attestation report before it votes (🔏 *verified* in the demo).
 5. **The accountant** downloads a CSV statement with every payment, fee and audit, linked to its evidence.
 
 ## Why a hijacked auditor can't steal the money
